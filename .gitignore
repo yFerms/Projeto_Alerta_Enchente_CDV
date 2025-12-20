@@ -1,0 +1,11 @@
+# Arquivos de Sistema e Ambiente (NÃO MEXER)
+.env
+venv/
+__pycache__/
+*.log
+
+# Arquivos de Teste e Saída
+output/
+historico_rio.csv
+stories_ativos.json
+*.pdf
