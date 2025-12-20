@@ -13,7 +13,6 @@ from gerar_imagem import gerar_todas_imagens
 from dados_ruas import calcular_risco_por_rua
 from android_bot import enviar_carrossel_android
 from email_bot import enviar_email_alerta
-# NOVO: Importando o Telegram
 from telegram_bot import enviar_telegram 
 
 load_dotenv()
@@ -21,7 +20,7 @@ load_dotenv()
 # ==============================================================================
 # PAINEL DE CONTROLE
 # ==============================================================================
-MODO_TESTE = False  # <--- MODO SIMULAÇÃO (800cm)
+MODO_TESTE = True  # <--- Mantenha True para testar a comparação agora
 
 # Limites de Nível
 LIMITE_ALERTA = 600
@@ -51,19 +50,15 @@ ULTIMA_POSTAGEM = None
 # ==============================================================================
 def registrar_log(mensagem):
     """Escreve no terminal, no arquivo de log e MANDA NO TELEGRAM"""
-    timestamp = datetime.now().strftime("%H:%M") # Hora mais curta pro Telegram
+    timestamp = datetime.now().strftime("%H:%M") 
     texto_completo = f"[{timestamp}] {mensagem}"
     
-    # 1. Print no Terminal
     print(texto_completo)
     
-    # 2. Salva no Arquivo
     with open("sistema.log", "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
         
-    # 3. Envia para o Telegram (Tenta enviar, se falhar, o robô continua)
     try:
-        # Adiciona emoji dependendo da mensagem para ficar bonito no chat
         emoji = "ℹ️"
         if "CRÍTICA" in mensagem or "GRAVE" in mensagem or "FLASH" in mensagem: emoji = "🚨"
         elif "ALERTA" in mensagem or "SUBINDO" in mensagem: emoji = "⚠️"
@@ -84,9 +79,6 @@ def salvar_csv(data_hora, nivel, tendencia, estacao):
         writer.writerow([data_hora, estacao, nivel, tendencia])
 
 def gerenciar_contador_stories():
-    """
-    Controla o limite de 9 stories.
-    """
     if os.path.exists(ARQUIVO_CONTADOR):
         with open(ARQUIVO_CONTADOR, "r") as f:
             try: dados = json.load(f)
@@ -115,6 +107,53 @@ def gerenciar_contador_stories():
     return deve_limpar
 
 # ==============================================================================
+# NOVA FUNÇÃO: MEMÓRIA HISTÓRICA
+# ==============================================================================
+def buscar_nivel_historico(ano_alvo):
+    """Busca na ANA o nível do rio na mesma data/hora, mas no ano solicitado."""
+    try:
+        agora = datetime.now()
+        data_historica = agora.replace(year=ano_alvo)
+        inicio = data_historica - timedelta(days=1)
+        fim = data_historica + timedelta(days=1)
+        
+        url = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx/DadosHidrometeorologicos"
+        params = {
+            "codEstacao": ESTACAO_TIMOTEO,
+            "dataInicio": inicio.strftime("%d/%m/%Y"),
+            "dataFim": fim.strftime("%d/%m/%Y"),
+        }
+        
+        response = requests.get(url, params=params, timeout=5) # Timeout rápido
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            melhor_diferenca = float('inf')
+            nivel_encontrado = None
+            
+            for dado in root.iter("DadosHidrometereologicos"):
+                nivel = dado.find("Nivel")
+                data_hora = dado.find("DataHora")
+                
+                if nivel is not None and data_hora is not None:
+                    try:
+                        dt_leitura = datetime.strptime(data_hora.text.strip(), "%Y-%m-%d %H:%M:%S")
+                        # Compara apenas dia/mês/hora (ignora ano)
+                        dt_ajustada = dt_leitura.replace(year=agora.year, month=agora.month, day=agora.day)
+                        diff = abs((agora - dt_ajustada).total_seconds())
+                        
+                        if diff < melhor_diferenca:
+                            melhor_diferenca = diff
+                            nivel_encontrado = float(nivel.text)
+                    except: continue
+            
+            if nivel_encontrado is not None:
+                return nivel_encontrado
+                
+        return "N/D"
+    except:
+        return "Erro"
+
+# ==============================================================================
 # LÓGICA DO ROBÔ
 # ==============================================================================
 def buscar_dados_xml(codigo_estacao):
@@ -141,59 +180,6 @@ def buscar_dados_xml(codigo_estacao):
     except Exception as e:
         registrar_log(f"Erro ANA: {e}")
         return []
-
-def buscar_nivel_historico(ano_alvo):
-    """
-    Busca na API da ANA qual era o nível do rio na mesma data/hora, 
-    mas no ano especificado.
-    """
-    try:
-        # Define a data alvo (Hoje, mas no ano passado)
-        agora = datetime.now()
-        
-        # Cria data de inicio e fim para a busca (janela de 2 dias no passado)
-        data_historica = agora.replace(year=ano_alvo)
-        inicio = data_historica - timedelta(days=1)
-        fim = data_historica + timedelta(days=1)
-        
-        url = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx/DadosHidrometeorologicos"
-        params = {
-            "codEstacao": ESTACAO_TIMOTEO,
-            "dataInicio": inicio.strftime("%d/%m/%Y"),
-            "dataFim": fim.strftime("%d/%m/%Y"),
-        }
-        
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            
-            # Vamos procurar a leitura com horário mais próximo de 'agora'
-            melhor_diferenca = float('inf')
-            nivel_encontrado = None
-            
-            for dado in root.iter("DadosHidrometereologicos"):
-                nivel = dado.find("Nivel")
-                data_hora = dado.find("DataHora")
-                
-                if nivel is not None and data_hora is not None:
-                    try:
-                        dt_leitura = datetime.strptime(data_hora.text.strip(), "%Y-%m-%d %H:%M:%S")
-                        # Verifica a diferença de tempo (ignorando o ano)
-                        # Queremos bater 14:00 com 14:00
-                        dt_leitura_ajustada = dt_leitura.replace(year=agora.year, month=agora.month, day=agora.day)
-                        diff = abs((agora - dt_leitura_ajustada).total_seconds())
-                        
-                        if diff < melhor_diferenca:
-                            melhor_diferenca = diff
-                            nivel_encontrado = float(nivel.text)
-                    except: continue
-            
-            if nivel_encontrado is not None:
-                return nivel_encontrado
-                
-        return "N/D" # Não disponível
-    except:
-        return "Erro"
 
 def analisar_velocidade(leituras, janela_horas=1):
     if len(leituras) < 2: return 0
@@ -245,10 +231,10 @@ def job():
     registrar_log("--- Iniciando Varredura ---")
     
     # ---------------------------------------------------------
-    # BLOCO SIMULAÇÃO 800cm
+    # BLOCO SIMULAÇÃO
     # ---------------------------------------------------------
     if MODO_TESTE:
-        registrar_log("SIMULAÇÃO ATIVA: Rio em 800cm")
+        # Simulando Nível Grave (800cm)
         d_timoteo = [
             {'data': datetime.now(), 'nivel': 800.0}, 
             {'data': datetime.now() - timedelta(hours=1), 'nivel': 790.0}
@@ -271,18 +257,14 @@ def job():
         ULTIMA_DATA_ANA = atual_t['data']
 
     deve_postar, intervalo_min, motivo = definir_estrategia_postagem(d_timoteo, d_barragem, d_nova_era)
-    registrar_log(f"Status: {motivo} | Nível: {atual_t['nivel']}cm")
     
-    # --- NOVO BLOCO: COMPARATIVO HISTÓRICO ---
-    # Só buscamos se não for modo teste (para não pesar a API à toa) ou se você quiser testar
+    # --- NOVO: BUSCA HISTÓRICA ---
+    # Busca os dados reais na ANA mesmo em modo teste
     hist_2020 = buscar_nivel_historico(2020)
     hist_2022 = buscar_nivel_historico(2022)
     
-    msg_extra = f"\n📅 *Comparativo Hoje:*\n• 2022: {hist_2022}cm\n• 2020: {hist_2020}cm"
-    
-    # Adicionamos ao log (agora vai pro Telegram também)
-    msg_completa = f"Status: {motivo} | Nível Atual: {atual_t['nivel']}cm{msg_extra}"
-    registrar_log(msg_completa)
+    msg_extra = f"\n📅 Comparativo Hoje:\n• 2022: {hist_2022}cm\n• 2020: {hist_2020}cm"
+    registrar_log(f"Status: {motivo} | Nível: {atual_t['nivel']}cm{msg_extra}")
     
     # Validação de Tempo 
     if deve_postar and not MODO_TESTE:
@@ -318,7 +300,7 @@ def job():
             registrar_log(f"Erro Android: {e}")
 
 if __name__ == "__main__":
-    registrar_log("MONITOR INICIADO")
+    registrar_log("MONITOR INICIADO (COM COMPARATIVO HISTÓRICO)")
     try:
         while True:
             job()
