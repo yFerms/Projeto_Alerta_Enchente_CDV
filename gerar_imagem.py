@@ -1,162 +1,169 @@
 from PIL import Image, ImageDraw, ImageFont
+import os
 from datetime import datetime
-from pathlib import Path
 
-# --- CONFIGURAÇÃO DE CAMINHOS ---
-PASTA_ATUAL = Path(__file__).resolve().parent
-PASTA_ASSETS = PASTA_ATUAL / 'assets'
-PASTA_OUTPUT = PASTA_ATUAL / 'output'
-PASTA_OUTPUT.mkdir(exist_ok=True)
+# ==============================================================================
+# CONFIGURAÇÕES VISUAIS
+# ==============================================================================
+# Cores
+COR_BRANCA = (255, 255, 255)
+COR_PRETA = (0, 0, 0)
 
-CAMINHO_TEMPLATE = PASTA_ASSETS / "template_story.png"
-CAMINHO_FONTE_BOLD = PASTA_ASSETS / "Roboto-Bold.ttf"
-CAMINHO_FONTE_REGULAR = PASTA_ASSETS / "Roboto-Regular.ttf"
+# Cores de Alerta (Fundo)
+COR_NORMAL = (46, 204, 113)      # Verde
+COR_ATENCAO = (241, 196, 15)     # Amarelo
+COR_ALERTA = (230, 126, 34)      # Laranja
+COR_PERIGO = (231, 76, 60)       # Vermelho
+COR_INUNDACAO = (142, 68, 173)   # Roxo (Crítico)
 
-# --- CORES ---
-COR_VERDE = (46, 204, 113)
-COR_AMARELO = (241, 196, 15)
-COR_LARANJA = (230, 126, 34)
-COR_VERMELHO = (231, 76, 60)
-COR_CINZA = (50, 50, 50)
-COR_BRANCO = (255, 255, 255)
-COR_PRETO = (0, 0, 0)
+def obter_cor_fundo(nivel):
+    if nivel < 400: return COR_NORMAL
+    if nivel < 600: return COR_ATENCAO
+    if nivel < 760: return COR_ALERTA
+    if nivel < 900: return COR_PERIGO
+    return COR_INUNDACAO
 
-def carregar_fonte(caminho, tamanho):
-    try: return ImageFont.truetype(str(caminho), tamanho)
-    except: return ImageFont.load_default()
+def obter_texto_situacao(nivel):
+    if nivel < 400: return "NÍVEL NORMAL"
+    if nivel < 600: return "ATENÇÃO"
+    if nivel < 760: return "ALERTA DE CHEIA"
+    if nivel < 900: return "PERIGO: INUNDAÇÃO"
+    return "CATASTRÓFICO"
 
-def _base_imagem():
-    try: return Image.open(str(CAMINHO_TEMPLATE)).convert("RGBA")
-    except: return Image.new('RGBA', (1080, 1920), COR_BRANCO)
-
-def _rodape(draw):
-    font = carregar_fonte(CAMINHO_FONTE_REGULAR, 30)
-    hora = datetime.now().strftime("%d/%m às %H:%M")
-    draw.text((350, 1880), f"Atualizado em: {hora}", font=font, fill=(0, 0, 0))
-
-# 1. CAPA (SEMÁFORO)
-def gerar_capa(dados_rio, tendencia):
-    img = Image.new('RGBA', (1080, 1920), COR_CINZA)
-    draw = ImageDraw.Draw(img)
+# ==============================================================================
+# FUNÇÃO 1: GERAR CAPA UNIFICADA (Nível + Histórico)
+# ==============================================================================
+def gerar_capa(dados_rio, tendencia, hist_2020, hist_2022):
     nivel = dados_rio['nivel_cm']
+    data_leitura = dados_rio['data_leitura']
     
-    cor_fundo = COR_VERDE
-    texto = "NÍVEL NORMAL"
-    if nivel > 450: cor_fundo, texto = COR_AMARELO, "ATENÇÃO"
-    if nivel > 650: cor_fundo, texto = COR_LARANJA, "ALERTA"
-    if nivel > 786: cor_fundo, texto = COR_VERMELHO, "INUNDAÇÃO"
-        
-    draw.rectangle([0, 0, 1080, 1920], fill=cor_fundo)
-    
-    f_status = carregar_fonte(CAMINHO_FONTE_BOLD, 100)
-    f_nivel = carregar_fonte(CAMINHO_FONTE_BOLD, 250)
-    f_tend = carregar_fonte(CAMINHO_FONTE_BOLD, 55)
-    f_cm = carregar_fonte(CAMINHO_FONTE_REGULAR, 100)
-    
-    draw.text((50, 400), texto, font=f_status, fill=COR_BRANCO)
-    draw.text((50, 700), f"{nivel:.0f}", font=f_nivel, fill=COR_BRANCO)
-    draw.text((750, 840), "cm", font=f_cm, fill=COR_BRANCO)
-    draw.text((50, 1100), f"Tendência: {tendencia}", font=f_tend, fill=COR_BRANCO)
-    
-    _rodape(draw)
-    path = PASTA_OUTPUT / "1_capa.png"
-    img.save(path)
-    return str(path)
-
-# 2. PLACAR DAS RUAS (VERSÃO EXPANDIDA - 16 RUAS)
-def gerar_placar(dados_rio, lista_ruas):
-    img = _base_imagem()
+    # 1. Configurar Imagem
+    largura, altura = 1080, 1920
+    cor_fundo = obter_cor_fundo(nivel)
+    img = Image.new('RGB', (largura, altura), color=cor_fundo)
     draw = ImageDraw.Draw(img)
-    
-    f_titulo = carregar_fonte(CAMINHO_FONTE_BOLD, 70)
-    f_subtitulo = carregar_fonte(CAMINHO_FONTE_REGULAR, 40)
-    f_item = carregar_fonte(CAMINHO_FONTE_BOLD, 28)
-    
-    draw.text((50, 630), "RISCO POR RUA", font=f_titulo, fill=COR_PRETO)
-    draw.text((50, 700), f"Nível: {dados_rio['nivel_cm']:.0f} cm", font=f_subtitulo, fill=COR_PRETO)
-    
-    # --- CONFIGURAÇÃO OTIMIZADA ---
-    y_start = 770       # Subimos um pouco (era 800) para caber mais
-    espacamento = 75    # Espaço compacto confirmado
-    altura_barra = 25   
-    
-    # Agora exibe as TOP 16 ruas
-    lista_ordenada = sorted(lista_ruas, key=lambda k: k['percentual'], reverse=True)[:16]
-    
-    for i, item in enumerate(lista_ordenada):
-        y = y_start + (i * espacamento)
-        pct = item['percentual']
-        
-        # Cores e Barras
-        draw.rectangle([50, y+35, 1030, y+35+altura_barra], fill=(220, 220, 220)) # Fundo
-        
-        cor = COR_VERDE
-        if pct > 50: cor = COR_AMARELO
-        if pct > 80: cor = COR_VERMELHO
-        
-        largura = int(980 * (pct/100))
-        if largura > 980: largura = 980
-        if largura < 0: largura = 0
-        
-        if largura > 0:
-            draw.rectangle([50, y+35, 50+largura, y+35+altura_barra], fill=cor) # Progresso
-            
-        # Textos
-        draw.text((50, y), item['nome'], font=f_item, fill=COR_PRETO)
-        draw.text((950, y), f"{int(pct)}%", font=f_item, fill=cor)
 
-    _rodape(draw)
-    path = PASTA_OUTPUT / "2_placar.png"
-    img.save(path)
-    return str(path)
+    # 2. Carregar Fontes (Tenta carregar Arial, senão usa padrão)
+    try:
+        font_titulo = ImageFont.truetype("arial.ttf", 100)
+        font_nivel = ImageFont.truetype("arialbd.ttf", 250) # Negrito Grande
+        font_tendencia = ImageFont.truetype("arial.ttf", 80)
+        font_hist_titulo = ImageFont.truetype("arialbd.ttf", 60)
+        font_hist_valor = ImageFont.truetype("arial.ttf", 70)
+        font_rodape = ImageFont.truetype("arial.ttf", 40)
+    except:
+        # Fallback se não tiver fonte instalada
+        font_titulo = ImageFont.load_default()
+        font_nivel = ImageFont.load_default()
+        font_tendencia = ImageFont.load_default()
+        font_hist_titulo = ImageFont.load_default()
+        font_hist_valor = ImageFont.load_default()
+        font_rodape = ImageFont.load_default()
 
-# 3. COMPARATIVO
-def gerar_comparativo(dados_rio):
-    img = _base_imagem()
+    # 3. Desenhar Texto: SITUAÇÃO (Topo)
+    situacao = obter_texto_situacao(nivel)
+    # Centraliza o texto
+    w = draw.textlength(situacao, font=font_titulo)
+    draw.text(((largura-w)/2, 150), situacao, font=font_titulo, fill=COR_BRANCA)
+
+    # 4. Desenhar Texto: NÍVEL ATUAL (Centro)
+    texto_nivel = f"{nivel:.0f} cm"
+    w = draw.textlength(texto_nivel, font=font_nivel)
+    draw.text(((largura-w)/2, 350), texto_nivel, font=font_nivel, fill=COR_BRANCA)
+    
+    # 5. Desenhar Texto: TENDÊNCIA
+    w = draw.textlength(tendencia, font=font_tendencia)
+    draw.text(((largura-w)/2, 650), tendencia, font=font_tendencia, fill=COR_BRANCA)
+
+    # --- LINHA DIVISÓRIA ---
+    draw.line([(100, 800), (980, 800)], fill=COR_BRANCA, width=5)
+
+    # 6. Desenhar Texto: COMPARATIVO HISTÓRICO (Abaixo da linha)
+    # Título da Seção
+    titulo_hist = "COMPARATIVO (Mesma data/hora):"
+    w = draw.textlength(titulo_hist, font=font_hist_titulo)
+    draw.text(((largura-w)/2, 850), titulo_hist, font=font_hist_titulo, fill=COR_BRANCA)
+
+    # Valor 2022
+    texto_2022 = f"Em 2022: {hist_2022} cm"
+    w = draw.textlength(texto_2022, font=font_hist_valor)
+    draw.text(((largura-w)/2, 950), texto_2022, font=font_hist_valor, fill=COR_BRANCA)
+
+    # Valor 2020
+    texto_2020 = f"Em 2020: {hist_2020} cm"
+    w = draw.textlength(texto_2020, font=font_hist_valor)
+    draw.text(((largura-w)/2, 1050), texto_2020, font=font_hist_valor, fill=COR_BRANCA)
+
+    # 7. Rodapé (Data)
+    texto_data = f"Atualizado: {data_leitura.strftime('%d/%m %H:%M')}"
+    w = draw.textlength(texto_data, font=font_rodape)
+    draw.text(((largura-w)/2, 1800), texto_data, font=font_rodape, fill=COR_BRANCA)
+
+    # Salvar
+    caminho = "output/capa_unificada.png"
+    if not os.path.exists("output"): os.makedirs("output")
+    img.save(caminho)
+    return caminho
+
+# ==============================================================================
+# FUNÇÃO 2: GERAR PLACAR DAS RUAS (Mantida quase igual)
+# ==============================================================================
+def gerar_placar(risco_ruas):
+    largura, altura = 1080, 1920
+    img = Image.new('RGB', (largura, altura), color=(30, 30, 30)) # Fundo Cinza Escuro
     draw = ImageDraw.Draw(img)
-    nivel = dados_rio['nivel_cm']
-    pico = 960
-    
-    f_titulo = carregar_fonte(CAMINHO_FONTE_BOLD, 60)
-    f_sub = carregar_fonte(CAMINHO_FONTE_REGULAR, 40)
-    f_bold_pq = carregar_fonte(CAMINHO_FONTE_BOLD, 40)
-    
-    draw.text((50, 630), "COMPARATIVO", font=f_titulo, fill=COR_PRETO)
-    draw.text((50, 730), "Hoje vs. Pico 2022", font=f_sub, fill=COR_PRETO)
-    
-    base_y, topo_y = 1650, 900
-    altura_total = base_y - topo_y
-    
-    # Barra Histórica
-    draw.rectangle([200, topo_y, 400, base_y], fill=(200, 200, 200))
-    draw.text((200, base_y+20), "PICO 2022", font=f_bold_pq, fill=COR_PRETO)
-    draw.text((240, topo_y-60), f"{pico}cm", font=f_bold_pq, fill=COR_PRETO)
-    
-    # Barra Atual
-    ratio = nivel / pico
-    if ratio > 1.1: ratio = 1.1 
-    
-    altura_atual = ratio * altura_total
-    y_topo_atual = base_y - altura_atual
-    if y_topo_atual < topo_y: y_topo_atual = topo_y - 50 
-    if y_topo_atual > base_y: y_topo_atual = base_y
-    
-    cor = (52, 152, 219) 
-    if nivel > 650: cor = COR_LARANJA
-    if nivel > 786: cor = COR_VERMELHO
-    
-    draw.rectangle([600, y_topo_atual, 800, base_y], fill=cor)
-    draw.text((600, base_y+20), "HOJE", font=f_bold_pq, fill=COR_PRETO)
-    draw.text((640, y_topo_atual-60), f"{nivel:.0f}cm", font=f_bold_pq, fill=cor)
 
-    _rodape(draw)
-    path = PASTA_OUTPUT / "3_comparativo.png"
-    img.save(path)
-    return str(path)
+    try:
+        font_titulo = ImageFont.truetype("arialbd.ttf", 80)
+        font_rua = ImageFont.truetype("arial.ttf", 60)
+        font_status = ImageFont.truetype("arialbd.ttf", 60)
+    except:
+        font_titulo = ImageFont.load_default()
+        font_rua = ImageFont.load_default()
+        font_status = ImageFont.load_default()
 
-def gerar_todas_imagens(dados_rio, lista_ruas, tendencia):
-    print("--- 🎨 Iniciando Geração de Imagens ---")
-    c1 = gerar_capa(dados_rio, tendencia)
-    c2 = gerar_placar(dados_rio, lista_ruas)
-    c3 = gerar_comparativo(dados_rio)
-    return [c1, c2, c3]
+    # Título
+    draw.text((50, 100), "SITUAÇÃO DAS RUAS", font=font_titulo, fill=COR_BRANCA)
+    draw.line([(50, 200), (1030, 200)], fill=COR_BRANCA, width=3)
+
+    y_pos = 250
+    for rua in risco_ruas:
+        nome = rua['nome']
+        pct = rua['percentual']
+        
+        # Define cor da barra baseada no risco
+        cor_barra = COR_NORMAL
+        if pct > 50: cor_barra = COR_ATENCAO
+        if pct > 80: cor_barra = COR_ALERTA
+        if pct >= 100: cor_barra = COR_PERIGO
+
+        # Texto da Rua
+        draw.text((50, y_pos), nome, font=font_rua, fill=COR_BRANCA)
+        
+        # Barra de Progresso (Fundo)
+        draw.rectangle([(550, y_pos + 10), (950, y_pos + 50)], fill=(50,50,50))
+        # Barra de Progresso (Preenchimento)
+        largura_barra = (pct / 100) * 400
+        draw.rectangle([(550, y_pos + 10), (550 + largura_barra, y_pos + 50)], fill=cor_barra)
+        
+        # Porcentagem
+        draw.text((970, y_pos), f"{pct:.0f}%", font=font_status, fill=cor_barra)
+
+        y_pos += 120 # Espaçamento entre linhas
+
+    caminho = "output/placar_ruas.png"
+    img.save(caminho)
+    return caminho
+
+# ==============================================================================
+# ORQUESTRADOR
+# ==============================================================================
+def gerar_todas_imagens(dados_rio, dados_ruas, tendencia, h2020, h2022):
+    """
+    Gera a capa unificada e o placar.
+    Retorna lista com 2 caminhos.
+    """
+    caminho1 = gerar_capa(dados_rio, tendencia, h2020, h2022)
+    caminho2 = gerar_placar(dados_ruas)
+    
+    return [caminho1, caminho2]

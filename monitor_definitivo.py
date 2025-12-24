@@ -20,7 +20,7 @@ load_dotenv()
 # ==============================================================================
 # PAINEL DE CONTROLE
 # ==============================================================================
-MODO_TESTE = False
+MODO_TESTE = True
 
 # Limites de Nível
 LIMITE_ALERTA = 600
@@ -278,20 +278,34 @@ def job():
 
     if deve_postar:
         registrar_log("POSTAGEM AUTORIZADA")
+        
+        # 1. VERIFICAÇÃO DE ROTINA (Para não limpar stories errados)
+        # Se for rotina, passamos True para o contador apenas resetar, não apagar
+        eh_rotina = "ROTINA" in motivo
         try:
-            precisa_limpar = gerenciar_contador_stories()
-        except: needs_cleaning = False
+            precisa_limpar = gerenciar_contador_stories(eh_rotina=eh_rotina)
+        except: 
+            precisa_limpar = False
             
+        # 2. PREPARAR DADOS
         dados_rio = {'nivel_cm': atual_t['nivel'], 'data_leitura': atual_t['data']}
+        
+        # Calcula o risco com a nova topografia (João Pedreiro, etc)
         risco = calcular_risco_por_rua(atual_t['nivel'])
-        ruas_fmt = [{'nome': i['apelido'], 'percentual': i['porcentagem']} for i in risco]
-        caminhos = gerar_todas_imagens(dados_rio, ruas_fmt, tendencia)
+        
+        # 3. GERAR IMAGENS (Agora passando os históricos e o risco direto)
+        # Obs: hist_2020 e hist_2022 foram calculados algumas linhas acima no seu código
+        caminhos = gerar_todas_imagens(dados_rio, risco, tendencia, hist_2020, hist_2022)
+        
+        # Garante caminhos absolutos para o ADB
         caminhos_abs = [str(Path(p).resolve()) for p in caminhos]
         
+        # 4. ENVIAR E-MAIL (Apenas se for ALERTA/CRÍTICO)
         if "ROTINA" not in motivo:
             try: enviar_email_alerta(caminhos_abs, atual_t['nivel'], f"{tendencia} - {motivo}")
             except: pass
             
+        # 5. POSTAR NO INSTAGRAM (Via Android)
         try:
             enviar_carrossel_android(caminhos_abs, deve_limpar=precisa_limpar)
             ULTIMA_POSTAGEM = datetime.now()
