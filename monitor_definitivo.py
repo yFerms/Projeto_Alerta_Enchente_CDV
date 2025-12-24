@@ -7,6 +7,7 @@ import csv
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+import random
 
 # --- MÓDULOS LOCAIS ---
 from gerar_imagem import gerar_todas_imagens
@@ -20,7 +21,7 @@ load_dotenv()
 # ==============================================================================
 # PAINEL DE CONTROLE
 # ==============================================================================
-MODO_TESTE = True
+MODO_TESTE = False
 
 # Limites de Nível
 LIMITE_ALERTA = 600
@@ -226,6 +227,107 @@ def definir_estrategia_postagem(dados_timoteo, dados_barragem, dados_nova_era):
 # ==============================================================================
 # JOB PRINCIPAL
 # ==============================================================================
+
+ARQUIVO_HISTORICO_RECENTE = "historico_velocidade.json"
+
+def calcular_velocidade_rio(nivel_atual, data_atual):
+    """
+    Calcula a velocidade de subida/descida em cm/h comparando com 1 hora atrás.
+    Também gerencia o arquivo de histórico recente.
+    """
+    # 1. Carregar histórico existente
+    historico = []
+    if os.path.exists(ARQUIVO_HISTORICO_RECENTE):
+        try:
+            with open(ARQUIVO_HISTORICO_RECENTE, "r") as f:
+                historico = json.load(f)
+        except: pass
+
+    # 2. Adicionar leitura atual
+    # Convertemos data para string para salvar no JSON
+    historico.append({
+        "data": data_atual.strftime("%Y-%m-%d %H:%M:%S"),
+        "nivel": nivel_atual
+    })
+
+    # 3. Limpar dados muito antigos (manter apenas últimas 3 horas para não pesar)
+    # Convertemos de volta para datetime para comparar
+    agora = data_atual
+    historico_limpo = []
+    leitura_referencia = None
+    
+    for item in historico:
+        item_data = datetime.strptime(item["data"], "%Y-%m-%d %H:%M:%S")
+        diferenca_horas = (agora - item_data).total_seconds() / 3600
+        
+        # Mantém no arquivo se for menor que 3 horas
+        if diferenca_horas <= 3:
+            historico_limpo.append(item)
+            
+        # Procura a leitura mais próxima de 1 hora atrás (entre 0.8h e 1.2h)
+        if 0.8 <= diferenca_horas <= 1.5:
+            leitura_referencia = item
+
+    # 4. Salvar histórico limpo
+    with open(ARQUIVO_HISTORICO_RECENTE, "w") as f:
+        json.dump(historico_limpo, f)
+
+    # 5. Calcular Velocidade
+    if leitura_referencia:
+        nivel_antigo = leitura_referencia["nivel"]
+        delta_nivel = nivel_atual - nivel_antigo
+        
+        # Formatar texto
+        if delta_nivel > 0:
+            return f"+{delta_nivel:.0f} cm/h" # Ex: +15 cm/h
+        elif delta_nivel < 0:
+            return f"{delta_nivel:.0f} cm/h"  # Ex: -5 cm/h
+        else:
+            return "Estável"
+    else:
+        # Se não tiver dados de 1h atrás (primeira execução), compara com o último
+        if len(historico_limpo) >= 2:
+            # Pega o penúltimo
+            ultimo = historico_limpo[-2] 
+            delta = nivel_atual - ultimo["nivel"]
+            return f"Var. Recente: {delta:+.0f} cm"
+            
+        return "Calculando..."
+
+def verificar_modo_vazante(nivel_atual):
+    """
+    Verifica se o rio entrou em modo de vazante (Recessão).
+    Critérios:
+    1. Nível alto (> 400cm) - Para não ativar em oscilações normais de seca.
+    2. Últimas 3 leituras caindo consistentemente.
+    """
+    # Só faz sentido falar em "Vazante" se o rio estiver cheio
+    if nivel_atual < 400:
+        return False
+
+    try:
+        with open(ARQUIVO_HISTORICO_RECENTE, "r") as f:
+            historico = json.load(f)
+            
+        # Precisamos de pelo menos 3 leituras anteriores + a atual (que já deve estar lá ou não)
+        # Vamos pegar as últimas 4 entradas do histórico
+        if len(historico) < 3:
+            return False
+            
+        ultimos = historico[-3:] # Pega os 3 últimos registros
+        
+        # Extrai apenas os níveis numa lista: [nivel_antigo, nivel_medio, nivel_recente]
+        niveis = [item['nivel'] for item in ultimos]
+        
+        # Verifica se está estritamente decrescente: A > B > C
+        # Ex: 700 > 690 > 680
+        if niveis[0] > niveis[1] > niveis[2]:
+            return True
+            
+        return False
+    except:
+        return False
+
 def job():
     global ULTIMA_DATA_ANA, ULTIMA_POSTAGEM
     registrar_log("--- Iniciando Varredura ---")
@@ -289,13 +391,23 @@ def job():
             
         # 2. PREPARAR DADOS
         dados_rio = {'nivel_cm': atual_t['nivel'], 'data_leitura': atual_t['data']}
-        
-        # Calcula o risco com a nova topografia (João Pedreiro, etc)
+    
+        # --- NOVO: CALCULAR VELOCIDADE ---
+        velocidade_texto = calcular_velocidade_rio(atual_t['nivel'], atual_t['data'])
+        registrar_log(f"Velocidade calculada: {velocidade_texto}")
+        # --- NOVO: DETECTAR VAZANTE ---
+        em_recessao = verificar_modo_vazante(atual_t['nivel'])
+        if em_recessao:
+            registrar_log("MODO VAZANTE DETECTADO! 📉")
+        # ------------------------------
+
         risco = calcular_risco_por_rua(atual_t['nivel'])
-        
-        # 3. GERAR IMAGENS (Agora passando os históricos e o risco direto)
-        # Obs: hist_2020 e hist_2022 foram calculados algumas linhas acima no seu código
-        caminhos = gerar_todas_imagens(dados_rio, risco, tendencia, hist_2020, hist_2022)
+    
+        # Passamos o flag 'em_recessao' para a função de imagem
+        caminhos = gerar_todas_imagens(dados_rio, risco, tendencia, hist_2020, hist_2022, velocidade_texto, em_recessao)
+    
+        # ATENÇÃO: Agora passamos 'velocidade_texto' para a função de imagem
+        caminhos = gerar_todas_imagens(dados_rio, risco, tendencia, hist_2020, hist_2022, velocidade_texto)
         
         # Garante caminhos absolutos para o ADB
         caminhos_abs = [str(Path(p).resolve()) for p in caminhos]
