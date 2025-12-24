@@ -20,7 +20,7 @@ load_dotenv()
 # ==============================================================================
 # PAINEL DE CONTROLE
 # ==============================================================================
-MODO_TESTE = True  # <--- Mantenha True para testar a comparação agora
+MODO_TESTE = False
 
 # Limites de Nível
 LIMITE_ALERTA = 600
