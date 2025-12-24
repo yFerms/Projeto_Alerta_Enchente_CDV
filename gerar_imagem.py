@@ -110,12 +110,12 @@ def gerar_capa(dados_rio, tendencia, hist_2020, hist_2022):
 # ==============================================================================
 def gerar_placar(risco_ruas):
     largura, altura = 1080, 1920
-    img = Image.new('RGB', (largura, altura), color=(30, 30, 30)) # Fundo Cinza Escuro
+    img = Image.new('RGB', (largura, altura), color=(30, 30, 30))
     draw = ImageDraw.Draw(img)
 
     try:
         font_titulo = ImageFont.truetype("arialbd.ttf", 80)
-        font_rua = ImageFont.truetype("arial.ttf", 60)
+        font_rua = ImageFont.truetype("arial.ttf", 55) # Diminuí um pouco a fonte da rua para caber nomes longos
         font_status = ImageFont.truetype("arialbd.ttf", 60)
     except:
         font_titulo = ImageFont.load_default()
@@ -126,30 +126,50 @@ def gerar_placar(risco_ruas):
     draw.text((50, 100), "SITUAÇÃO DAS RUAS", font=font_titulo, fill=COR_BRANCA)
     draw.line([(50, 200), (1030, 200)], fill=COR_BRANCA, width=3)
 
+    # === CONFIGURAÇÕES DO GRÁFICO (Mude aqui para ajustar) ===
+    POS_X_NOME = 50          # Onde começa o nome da rua
+    POS_X_BARRA = 520        # Onde começa a barra (Empurrei pra direita para dar espaço ao nome)
+    LARGURA_MAX_BARRA = 350  # <--- REDUZI O TAMANHO (Era 400)
+    POS_X_PORCENTAGEM = 910  # <--- PUXEI PARA A ESQUERDA (Era 970)
+    ALTURA_BARRA = 40        # Grossura da barra
+    # ========================================================
+
     y_pos = 250
     for rua in risco_ruas:
-        nome = rua['nome']
-        pct = rua['percentual']
+        nome = rua['apelido']
+        pct = rua['porcentagem']
         
-        # Define cor da barra baseada no risco
+        # Cores baseadas no risco
         cor_barra = COR_NORMAL
         if pct > 50: cor_barra = COR_ATENCAO
         if pct > 80: cor_barra = COR_ALERTA
         if pct >= 100: cor_barra = COR_PERIGO
 
-        # Texto da Rua
-        draw.text((50, y_pos), nome, font=font_rua, fill=COR_BRANCA)
+        # 1. Desenhar Nome da Rua
+        draw.text((POS_X_NOME, y_pos), nome, font=font_rua, fill=COR_BRANCA)
         
-        # Barra de Progresso (Fundo)
-        draw.rectangle([(550, y_pos + 10), (950, y_pos + 50)], fill=(50,50,50))
-        # Barra de Progresso (Preenchimento)
-        largura_barra = (pct / 100) * 400
-        draw.rectangle([(550, y_pos + 10), (550 + largura_barra, y_pos + 50)], fill=cor_barra)
-        
-        # Porcentagem
-        draw.text((970, y_pos), f"{pct:.0f}%", font=font_status, fill=cor_barra)
+        # 2. Desenhar Fundo da Barra (Cinza Escuro)
+        # Vai do inicio da barra até o tamanho máximo
+        draw.rectangle(
+            [(POS_X_BARRA, y_pos + 10), (POS_X_BARRA + LARGURA_MAX_BARRA, y_pos + 10 + ALTURA_BARRA)], 
+            fill=(50,50,50)
+        )
 
-        y_pos += 120 # Espaçamento entre linhas
+        # 3. Desenhar Barra Colorida (Progresso)
+        # TRAVA DE SEGURANÇA: Usamos min(pct, 100) para a barra nunca passar do limite visual
+        pct_visual = min(pct, 100.0) 
+        comprimento_atual = (pct_visual / 100) * LARGURA_MAX_BARRA
+        
+        draw.rectangle(
+            [(POS_X_BARRA, y_pos + 10), (POS_X_BARRA + comprimento_atual, y_pos + 10 + ALTURA_BARRA)], 
+            fill=cor_barra
+        )
+        
+        # 4. Desenhar Porcentagem
+        # O texto fica na posição fixa definida lá em cima
+        draw.text((POS_X_PORCENTAGEM, y_pos), f"{pct:.0f}%", font=font_status, fill=cor_barra)
+
+        y_pos += 120 # Pula para a próxima linha
 
     caminho = "output/placar_ruas.png"
     img.save(caminho)
