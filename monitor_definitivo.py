@@ -79,7 +79,14 @@ def salvar_csv(data_hora, nivel, tendencia, estacao):
         if not existe: writer.writerow(["DataHora", "Estacao", "Nivel", "Tendencia"])
         writer.writerow([data_hora, estacao, nivel, tendencia])
 
-def gerenciar_contador_stories():
+def gerenciar_contador_stories(eh_rotina=False):
+    """
+    Controla o limite de stories (Máximo 6 ativos).
+    - Se for ROTINA: Reseta o contador para 2 (Instagram limpa os velhos).
+    - Se for CRISE: 
+        - Acumula de 2 em 2.
+        - Se chegar em 6, ativa flag para apagar os 2 mais antigos.
+    """
     if os.path.exists(ARQUIVO_CONTADOR):
         with open(ARQUIVO_CONTADOR, "r") as f:
             try: dados = json.load(f)
@@ -90,14 +97,32 @@ def gerenciar_contador_stories():
     qtd_atual = dados["qtd"]
     deve_limpar = False
     
-    if qtd_atual >= 9:
-        registrar_log(f"Limite stories ({qtd_atual}). Agendando Faxina.")
-        deve_limpar = True
-        nova_qtd = qtd_atual 
-    else:
-        registrar_log(f"Total stories será: {qtd_atual + 3}")
+    # CONFIGURAÇÃO DA CONTAGEM
+    LOTE_IMAGENS = 2      # Quantas imagens postamos por vez (Capa + Placar)
+    LIMITE_STORIES = 6    # Máximo permitido antes de apagar (3 ciclos de 2)
+    
+    if eh_rotina:
+        # ROTINA (07:00/19:00):
+        # Não apagamos manualmente. O Instagram já expirou os de 24h atrás.
+        # Apenas resetamos o contador para o lote atual.
+        registrar_log("Modo ROTINA: Resetando contador (Limpeza natural do IG).")
+        nova_qtd = LOTE_IMAGENS
         deve_limpar = False
-        nova_qtd = qtd_atual + 3
+    else:
+        # CRISE (15 em 15 min):
+        if qtd_atual >= LIMITE_STORIES:
+            registrar_log(f"Limite ({qtd_atual}) atingido. Solicitando exclusão de {LOTE_IMAGENS} antigos.")
+            deve_limpar = True
+            
+            # MATEMÁTICA DA JANELA DESLIZANTE:
+            # Tínhamos 6. Apagamos 2 (LOTE). Postamos 2 (LOTE).
+            # 6 - 2 + 2 = 6.
+            # O contador estaciona no limite.
+            nova_qtd = LIMITE_STORIES 
+        else:
+            nova_qtd = qtd_atual + LOTE_IMAGENS
+            registrar_log(f"Contador stories acumulando: {qtd_atual} -> {nova_qtd}")
+            deve_limpar = False
         
     dados["qtd"] = nova_qtd
     dados["ultima_limpeza"] = str(datetime.now())
