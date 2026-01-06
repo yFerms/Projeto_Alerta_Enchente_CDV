@@ -6,7 +6,7 @@ from datetime import datetime
 # CONFIGURAÇÕES DE CORES
 # ==============================================================================
 COR_BRANCA = (255, 255, 255)
-COR_CINZA_CLARO = (200, 200, 200) # Para o número da casa
+COR_CINZA_CLARO = (200, 200, 200)
 COR_NORMAL = (46, 204, 113)
 COR_ATENCAO = (241, 196, 15)
 COR_ALERTA = (230, 126, 34)
@@ -31,9 +31,9 @@ def obter_texto_situacao(nivel, em_recessao):
     return "CATASTRÓFICO"
 
 # ==============================================================================
-# FUNÇÃO 1: GERAR CAPA UNIFICADA
+# FUNÇÃO 1: GERAR CAPA (LISTA VERTICAL 2020-2025)
 # ==============================================================================
-def gerar_capa(dados_rio, tendencia, hist_2020, hist_2022, velocidade, em_recessao):
+def gerar_capa(dados_rio, tendencia, historico_dict, velocidade, em_recessao):
     nivel = dados_rio['nivel_cm']
     data_leitura = dados_rio['data_leitura']
     largura, altura = 1080, 1920
@@ -45,46 +45,64 @@ def gerar_capa(dados_rio, tendencia, hist_2020, hist_2022, velocidade, em_recess
         font_titulo = ImageFont.truetype("arial.ttf", 100)
         font_nivel = ImageFont.truetype("arialbd.ttf", 250)
         font_tendencia = ImageFont.truetype("arial.ttf", 80)
-        font_hist_valor = ImageFont.truetype("arial.ttf", 70)
+        font_velocidade = ImageFont.truetype("arial.ttf", 70)
         font_hist_titulo = ImageFont.truetype("arialbd.ttf", 60)
+        # Fonte ajustada para a lista vertical
+        font_hist_valor = ImageFont.truetype("arial.ttf", 65) 
         font_rodape = ImageFont.truetype("arial.ttf", 40)
     except:
         font_titulo = ImageFont.load_default()
         font_nivel = ImageFont.load_default()
         font_tendencia = ImageFont.load_default()
-        font_hist_valor = ImageFont.load_default()
+        font_velocidade = ImageFont.load_default()
         font_hist_titulo = ImageFont.load_default()
+        font_hist_valor = ImageFont.load_default()
         font_rodape = ImageFont.load_default()
 
+    # 1. Situação
     situacao = obter_texto_situacao(nivel, em_recessao)
     w = draw.textlength(situacao, font=font_titulo)
     draw.text(((largura-w)/2, 150), situacao, font=font_titulo, fill=COR_BRANCA)
 
+    # 2. Nível Gigante
     texto_nivel = f"{nivel:.0f} cm"
     w = draw.textlength(texto_nivel, font=font_nivel)
     draw.text(((largura-w)/2, 350), texto_nivel, font=font_nivel, fill=COR_BRANCA)
     
+    # 3. Tendência
     w = draw.textlength(tendencia, font=font_tendencia)
     draw.text(((largura-w)/2, 600), tendencia, font=font_tendencia, fill=COR_BRANCA)
 
+    # 4. Velocidade
     texto_vel = f"({velocidade})"
-    w = draw.textlength(texto_vel, font=font_hist_valor)
-    draw.text(((largura-w)/2, 700), texto_vel, font=font_hist_valor, fill=COR_BRANCA)
+    w = draw.textlength(texto_vel, font=font_velocidade)
+    draw.text(((largura-w)/2, 700), texto_vel, font=font_velocidade, fill=COR_BRANCA)
 
     draw.line([(100, 800), (980, 800)], fill=COR_BRANCA, width=5)
 
-    titulo_hist = "COMPARATIVO (Mesma data/hora):"
+    # 5. Histórico (Layout Vertical Centralizado)
+    titulo_hist = "COMPARATIVO (Mesma data):"
     w = draw.textlength(titulo_hist, font=font_hist_titulo)
     draw.text(((largura-w)/2, 850), titulo_hist, font=font_hist_titulo, fill=COR_BRANCA)
 
-    texto_2022 = f"Em 2022: {hist_2022} cm"
-    w = draw.textlength(texto_2022, font=font_hist_valor)
-    draw.text(((largura-w)/2, 950), texto_2022, font=font_hist_valor, fill=COR_BRANCA)
+    y_inicial = 980      # Começa logo abaixo do título
+    espaco_linha = 110   # Espaçamento generoso para ficar legível
+    
+    # Ordena os anos (2020, 2021...) para garantir a sequência
+    anos = sorted(historico_dict.keys()) 
+    
+    for i, ano in enumerate(anos):
+        valor = historico_dict[ano]
+        texto = f"{ano}: {valor} cm"
+        
+        # Centraliza cada linha
+        w = draw.textlength(texto, font=font_hist_valor)
+        x_pos = (largura - w) / 2
+        y_pos = y_inicial + (i * espaco_linha)
+        
+        draw.text((x_pos, y_pos), texto, font=font_hist_valor, fill=COR_BRANCA)
 
-    texto_2020 = f"Em 2020: {hist_2020} cm"
-    w = draw.textlength(texto_2020, font=font_hist_valor)
-    draw.text(((largura-w)/2, 1050), texto_2020, font=font_hist_valor, fill=COR_BRANCA)
-
+    # 6. Rodapé
     texto_data = f"Atualizado: {data_leitura.strftime('%d/%m %H:%M')}"
     w = draw.textlength(texto_data, font=font_rodape)
     draw.text(((largura-w)/2, 1800), texto_data, font=font_rodape, fill=COR_BRANCA)
@@ -95,18 +113,13 @@ def gerar_capa(dados_rio, tendencia, hist_2020, hist_2022, velocidade, em_recess
     return caminho
 
 # ==============================================================================
-# FUNÇÃO 2: GERAR PLACAR PAGINADO (VERSÃO COMPACTA - 8 POR PAGINA)
+# FUNÇÃO 2: GERAR PLACAR (MANTIDO PADRÃO)
 # ==============================================================================
 def gerar_placares_paginados(risco_ruas):
-    """
-    Gera imagens paginadas. 
-    Meta: Caber tudo em 2 imagens (até 16 itens).
-    """
-    ITENS_POR_PAGINA = 13  # Compacto
-    ESPACO_VERTICAL = 120 # Compacto
+    ITENS_POR_PAGINA = 14
+    ESPACO_VERTICAL = 115
     
     paginas = [risco_ruas[i:i + ITENS_POR_PAGINA] for i in range(0, len(risco_ruas), ITENS_POR_PAGINA)]
-    
     caminhos_gerados = []
 
     try:
@@ -125,46 +138,33 @@ def gerar_placares_paginados(risco_ruas):
         img = Image.new('RGB', (largura, altura), color=(30, 30, 30))
         draw = ImageDraw.Draw(img)
 
-        # Cabeçalho
-        titulo = f"SITUAÇÃO DAS RUAS ({i+1}/{len(paginas)})"
+        titulo = "SITUAÇÃO DAS RUAS" if len(paginas) == 1 else f"SITUAÇÃO DAS RUAS ({i+1}/{len(paginas)})"
+            
         draw.text((50, 100), titulo, font=font_titulo, fill=COR_BRANCA)
         draw.line([(50, 190), (1030, 190)], fill=COR_BRANCA, width=3)
 
-        y_pos = 230
-        
+        y_pos = 220
         for rua in ruas_pagina:
             nome_principal = rua['nome']
             detalhe_numero = rua['apelido']
             pct = rua['porcentagem']
             
-            # Cores
             cor_barra = COR_NORMAL
             if pct > 50: cor_barra = COR_ATENCAO
             if pct > 80: cor_barra = COR_ALERTA
             if pct >= 100: cor_barra = COR_PERIGO
 
-            # AQUI ESTAVA O CORTE! AGORA ESTÁ COMPLETO:
-            
-            # 1. Nome da Rua (Negrito)
             draw.text((50, y_pos), nome_principal, font=font_nome_rua, fill=COR_BRANCA)
-            
-            # 2. Números (Mais perto do nome agora)
-            draw.text((50, y_pos + 50), detalhe_numero, font=font_detalhe, fill=COR_CINZA_CLARO)
+            draw.text((50, y_pos + 45), detalhe_numero, font=font_detalhe, fill=COR_CINZA_CLARO)
 
-            # 3. Barra de Progresso
             draw.rectangle([(600, y_pos + 15), (900, y_pos + 55)], fill=(60,60,60))
-            
             pct_visual = min(pct, 100.0)
             largura_barra = (pct_visual / 100) * 300
             draw.rectangle([(600, y_pos + 15), (600 + largura_barra, y_pos + 55)], fill=cor_barra)
-            
-            # 4. Porcentagem
             draw.text((920, y_pos + 5), f"{pct:.0f}%", font=font_pct, fill=cor_barra)
 
-            # Próxima linha
             y_pos += ESPACO_VERTICAL 
 
-        # Rodapé indicativo (Só aparece se não for a última página)
         if i < len(paginas) - 1:
             draw.text((350, 1800), "Continua no próximo story... ➡️", font=font_detalhe, fill=COR_BRANCA)
 
@@ -177,12 +177,8 @@ def gerar_placares_paginados(risco_ruas):
 # ==============================================================================
 # ORQUESTRADOR FINAL
 # ==============================================================================
-def gerar_todas_imagens(dados_rio, dados_ruas, tendencia, h2020, h2022, velocidade, em_recessao=False):
-    # 1. Gera Capa
-    caminho_capa = gerar_capa(dados_rio, tendencia, h2020, h2022, velocidade, em_recessao)
-    
-    # 2. Gera Placares (Pode retornar lista com várias imagens)
+def gerar_todas_imagens(dados_rio, dados_ruas, tendencia, historico_dict, velocidade, em_recessao=False):
+    # Passa o dicionário completo de histórico
+    caminho_capa = gerar_capa(dados_rio, tendencia, historico_dict, velocidade, em_recessao)
     lista_placares = gerar_placares_paginados(dados_ruas)
-    
-    # Retorna lista única: [Capa, Placar1, Placar2...]
     return [caminho_capa] + lista_placares

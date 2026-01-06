@@ -5,15 +5,22 @@ import gerar_imagem
 # ======================================================
 # CONFIGURAÇÃO DO CENÁRIO DE TESTE
 # ======================================================
-# Vamos simular uma cheia grave para testar paginação e cores
-NIVEL_SIMULADO = 870  
+# Simulação de Cheia Grave
+NIVEL_SIMULADO = 820  
 TENDENCIA_SIMULADA = "SUBINDO"
 VELOCIDADE_SIMULADA = "+15 cm/h"
-EM_RECESSAO = False # Mude para True se quiser testar a cor Verde Água
+EM_RECESSAO = False 
 
-# Dados históricos fictícios para preencher a capa
-HIST_2020 = 650
-HIST_2022 = 780
+# Dicionário Histórico Completo (2020-2025)
+# Simula o que o monitor busca na ANA
+HISTORICO_SIMULADO = {
+    2020: 650,
+    2021: 410,
+    2022: 780,
+    2023: 350,
+    2024: 500,
+    2025: 420
+}
 
 def rodar_teste():
     print(f"--- INICIANDO SIMULAÇÃO VISUAL ---")
@@ -25,21 +32,20 @@ def rodar_teste():
         'data_leitura': datetime.now()
     }
 
-    # 2. Calcular o Risco das Ruas (Usa o seu arquivo dados_ruas.py)
+    # 2. Calcular o Risco das Ruas
     print("Calculando riscos por rua...")
     risco_ruas = dados_ruas.calcular_risco_por_rua(NIVEL_SIMULADO)
-    
-    # Mostra quantos itens tem na lista (para conferir se vai gerar 2 páginas)
     print(f"Total de setores monitorados: {len(risco_ruas)}")
 
-    # 3. Gerar as Imagens (Usa o seu arquivo gerar_imagem.py)
+    # 3. Gerar as Imagens
     print("Gerando imagens na pasta output/...")
+    
+    # CHAMADA ATUALIZADA: Passando o dicionário de histórico
     caminhos = gerar_imagem.gerar_todas_imagens(
         dados_rio, 
         risco_ruas, 
         TENDENCIA_SIMULADA, 
-        HIST_2020, 
-        HIST_2022, 
+        HISTORICO_SIMULADO,  # <--- Passamos o Dicionário aqui
         VELOCIDADE_SIMULADA,
         EM_RECESSAO
     )
