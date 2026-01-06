@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px # Gráficos interativos
 from datetime import datetime, timedelta
+import monitor_clima
 
 # Importando o cérebro do seu robô
 import monitor_definitivo as monitor
@@ -84,6 +85,15 @@ with col4:
         st.metric("Nova Era", "Sem dados")
 
 st.markdown(f"*Última leitura: {data_leitura.strftime('%d/%m/%Y às %H:%M')}*")
+
+# --- NOVO BLOCO DE CLIMA ---
+with st.expander("🌦️ Previsão do Tempo (Próximas 24h)"):
+    try:
+        info_clima = monitor_clima.consultar_previsao_chuva()
+        st.info(info_clima)
+    except:
+        st.warning("Dados meteorológicos indisponíveis no momento.")
+# ---------------------------
 
 # =========================================================
 # 2. GRÁFICO INTERATIVO

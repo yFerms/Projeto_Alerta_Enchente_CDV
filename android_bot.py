@@ -14,7 +14,7 @@ def executar_adb(comando_lista):
     subprocess.run([cmd_adb] + comando_lista, check=False)
 
 def acordar_celular():
-    print("🔌 Acordando o celular...")
+    print(" Acordando o celular...")
     executar_adb(["shell", "input", "keyevent", "KEYCODE_WAKEUP"])
     time.sleep(1)
     # Desliza para desbloquear (ajuste as coordenadas se necessário)
@@ -24,7 +24,7 @@ def acordar_celular():
     executar_adb(["shell", "settings", "put", "system", "screen_brightness", "1"])
 
 def dormir_celular():
-    print("💤 Colocando celular para dormir...")
+    print(" Colocando celular para dormir...")
     executar_adb(["shell", "input", "keyevent", "KEYCODE_HOME"])
     time.sleep(1)
     executar_adb(["shell", "input", "keyevent", "KEYCODE_SLEEP"])
@@ -39,25 +39,25 @@ def limpar_stories_antigos():
     print("🧹 Iniciando ROTINA DE FAXINA (Modo Janela Deslizante)...")
     
     # 1. Reinicia Instagram (Garante que o app não está travado)
-    print("   🔄 Reiniciando Instagram...")
+    print("    Reiniciando Instagram...")
     executar_adb(["shell", "am", "force-stop", "com.instagram.android"])
     time.sleep(2)
     executar_adb(["shell", "monkey", "-p", "com.instagram.android", "-c", "android.intent.category.LAUNCHER", "1"])
     
-    print("   ⏳ Aguardando Instagram carregar (8s)...")
+    print("    Aguardando Instagram carregar (8s)...")
     time.sleep(8)
     
     # 2. Dispara Macro (O MacroDroid deve estar configurado para executar a exclusão 2 VEZES)
-    print("   📢 Disparando MacroDroid: APAGARSTORY")
+    print("    Disparando MacroDroid: APAGARSTORY")
     executar_adb(["shell", "am", "broadcast", "-a", "APAGARSTORY", "-p", "com.arlosoft.macrodroid"])
     
     # 3. Tempo para a macro trabalhar
     # Cálculo estimado: 10s para apagar o primeiro + 10s para o segundo + 10s de margem
     tempo_macro = 30 
-    print(f"   ☕ Aguardando {tempo_macro}s para a faxina de 2 stories...")
+    print(f"    Aguardando {tempo_macro}s para a faxina de 2 stories...")
     time.sleep(tempo_macro)
     
-    print("✨ Limpeza concluída.")
+    print(" Limpeza concluída.")
 
 # ==============================================================================
 # FUNÇÕES DE POSTAGEM (CORRIGIDAS)
@@ -66,7 +66,7 @@ def enviar_uma_imagem(caminho_imagem):
     nome_arquivo = "alerta_story.png"
     destino_celular = f"/sdcard/Pictures/{nome_arquivo}"
     
-    print(f"📤 Preparando envio: {os.path.basename(caminho_imagem)}")
+    print(f" Preparando envio: {os.path.basename(caminho_imagem)}")
 
     # 1. DELETAR ARQUIVO ANTIGO (A Correção Mágica 🎩)
     # Isso obriga o Android a perceber que o próximo arquivo é "Novo" e colocá-lo no topo da galeria
@@ -86,15 +86,15 @@ def enviar_uma_imagem(caminho_imagem):
     executar_adb(["shell", "monkey", "-p", "com.instagram.android", "-c", "android.intent.category.LAUNCHER", "1"])
     
     # 5. AGUARDAR CARREGAMENTO (Aumentei para 10s para celulares lentos)
-    print("   ⏳ Aguardando Instagram abrir (10s)...")
+    print("    Aguardando Instagram abrir (10s)...")
     time.sleep(10)
     
     # 6. DISPARAR MACRO
-    print("   📢 Disparando Macro POSTAR_STORY...")
+    print("    Disparando Macro POSTAR_STORY...")
     executar_adb(["shell", "am", "broadcast", "-a", "POSTAR_STORY", "-p", "com.arlosoft.macrodroid"])
 
 def enviar_carrossel_android(lista_caminhos, deve_limpar=False):
-    print("\n📱 --- INICIANDO POSTAGEM ANDROID ---")
+    print("\n --- INICIANDO POSTAGEM ANDROID ---")
     acordar_celular()
     
     # FASE 1: Limpeza (Se necessário)
@@ -102,7 +102,7 @@ def enviar_carrossel_android(lista_caminhos, deve_limpar=False):
         try:
             limpar_stories_antigos() 
         except Exception as e:
-            print(f"⚠️ Erro não-fatal na limpeza: {e}")
+            print(f"Erro não-fatal na limpeza: {e}")
 
     # FASE 2: Postagem Loop
     # O tempo de postagem precisa ser suficiente para o MacroDroid fazer:
@@ -110,16 +110,16 @@ def enviar_carrossel_android(lista_caminhos, deve_limpar=False):
     tempo_por_story = 35 
     
     for i, imagem in enumerate(lista_caminhos):
-        print(f"\n📸 Postando {i+1}/{len(lista_caminhos)}...")
+        print(f"\n Postando {i+1}/{len(lista_caminhos)}...")
         try:
             enviar_uma_imagem(imagem)
             
             # Espera a macro terminar de clicar e o upload acontecer
-            print(f"   ⏳ Dando {tempo_por_story}s para o MacroDroid trabalhar...")
+            print(f"Dando {tempo_por_story}s para o MacroDroid trabalhar...")
             time.sleep(tempo_por_story)
             
         except Exception as e:
-            print(f"❌ Erro ao postar imagem {i+1}: {e}")
+            print(f"Erro ao postar imagem {i+1}: {e}")
             
-    print("🏁 Ciclo Android finalizado.")
+    print("Ciclo Android finalizado.")
     dormir_celular()

@@ -3,9 +3,8 @@ from sklearn.linear_model import LinearRegression
 from datetime import datetime, timedelta
 
 def prever_proxima_hora(historico_recente):
-    """
-    PREVISÃO CURTO PRAZO (1h): Usa a inércia do próprio rio em Timóteo.
-    """
+
+    """PREVISÃO CURTO PRAZO (1h): Usa a inércia do próprio rio em Timóteo."""
     if not historico_recente or len(historico_recente) < 3:
         return None, "Dados insuficientes"
 
@@ -35,9 +34,7 @@ def prever_proxima_hora(historico_recente):
     return nivel_futuro, f"{velocidade_hora:+.1f} cm/h"
 
 def prever_com_nova_era(dados_timoteo, dados_nova_era):
-    """
-    PREVISÃO MÉDIO PRAZO: Compara Nível Atual vs Nível de 4 a 6 horas atrás em Nova Era.
-    """
+    """PREVISÃO MÉDIO PRAZO: Compara Nível Atual vs Nível de 4 a 6 horas atrás em Nova Era."""
     if not dados_timoteo or not dados_nova_era:
         return None, None
 

@@ -11,6 +11,7 @@ import random
 import cerebro_ia
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import monitor_clima
 
 # --- MÓDULOS LOCAIS ---
 from gerar_imagem import gerar_todas_imagens
@@ -386,6 +387,17 @@ def job():
         registrar_log(f"Erro IA Longa: {e}", enviar_tg=False)
 
     # -------------------------------------------------------------
+    # 3.5 CONSULTA METEOROLOGIA (NOVO)
+    # -------------------------------------------------------------
+    texto_clima = ""
+    try:
+        # Só consulta se for hora cheia para não gastar cota da API à toa
+        # (Ou sempre, já que temos 1000 chamadas/dia e fazemos ~96 leituras/dia)
+        texto_clima = monitor_clima.consultar_previsao_chuva()
+    except Exception as e:
+        registrar_log(f"Erro Clima: {e}", enviar_tg=False)    
+
+    # -------------------------------------------------------------
     # 4. ENVIA RELATÓRIO TELEGRAM (SEMPRE)
     # -------------------------------------------------------------
     try:
@@ -394,6 +406,9 @@ def job():
         
         if msg_ia_longa:
             msg_tg += f"\n{msg_ia_longa}\n"
+
+        if texto_clima:
+            msg_tg += f"\n{texto_clima}\n"    
             
         msg_tg += f"Tendência: {tendencia} {velocidade_texto}\n"
         msg_tg += f"Status: {motivo}\n"
