@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 import random
+import cerebro_ia
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- MÓDULOS LOCAIS ---
 from gerar_imagem import gerar_todas_imagens
@@ -166,8 +169,22 @@ def buscar_dados_xml(codigo_estacao):
     hoje = datetime.now()
     ontem = hoje - timedelta(days=1)
     params = {"codEstacao": codigo_estacao, "dataInicio": ontem.strftime("%d/%m/%Y"), "dataFim": hoje.strftime("%d/%m/%Y")}
+    
+    # --- CONFIGURAÇÃO DE PERSISTÊNCIA (RETRY) ---
+    # Tenta 3 vezes total.
+    # backoff_factor=2 significa: espera 2s, depois 4s, depois 8s...
+    # status_forcelist: Tenta de novo se der erro 500, 502, 503, 504 (Erros de servidor)
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    # --------------------------------------------
+
     try:
-        response = requests.get(url, params=params, timeout=20)
+        # Aumentei o timeout para 30s por segurança
+        response = session.get(url, params=params, timeout=30)
+        
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             leituras = []
@@ -189,7 +206,7 @@ def buscar_dados_xml(codigo_estacao):
             registrar_log(f"❌ Erro HTTP {response.status_code} na estação {codigo_estacao}", enviar_tg=False)
             return []
     except Exception as e:
-        registrar_log(f"❌ Erro ANA: {e}", enviar_tg=False)
+        registrar_log(f"❌ Falha Definitiva ANA: {e}", enviar_tg=False)
         return []
 
 def analisar_velocidade(leituras, janela_horas=1):
@@ -282,12 +299,18 @@ def verificar_modo_vazante(nivel_atual):
 # ==============================================================================
 # JOB PRINCIPAL
 # ==============================================================================
+
 def job():
     global ULTIMA_DATA_ANA, ULTIMA_POSTAGEM
     registrar_log("--- Iniciando Varredura ---", enviar_tg=False)
     
+    # 1. INICIALIZAÇÃO SEGURA DE VARIÁVEIS (Para evitar erros de "not defined")
+    nivel_futuro = None          # Variável unificada para a previsão
+    previsao_ia_texto = None     # Texto curto para a imagem
+    msg_ia_longa = ""            # Texto longo para o Telegram
+    
     if MODO_TESTE:
-        d_timoteo = [{'data': datetime.now(), 'nivel': 800.0}, {'data': datetime.now() - timedelta(hours=1), 'nivel': 790.0}]
+        d_timoteo = [{'data': datetime.now(), 'nivel': 800.0}, {'data': datetime.now() - timedelta(hours=1), 'nivel': 790.0}, {'data': datetime.now() - timedelta(hours=2), 'nivel': 780.0}, {'data': datetime.now() - timedelta(hours=3), 'nivel': 770.0}]
         d_barragem = [{'data': datetime.now(), 'nivel': 200.0}, {'data': datetime.now(), 'nivel': 200.0}]
         d_nova_era = [{'data': datetime.now(), 'nivel': 150.0}, {'data': datetime.now(), 'nivel': 150.0}]
         ULTIMA_DATA_ANA = None 
@@ -310,7 +333,7 @@ def job():
     deve_postar, intervalo_min, motivo = definir_estrategia_postagem(d_timoteo, d_barragem, d_nova_era)
     
     # -------------------------------------------------------------
-    # 1. BUSCA HISTÓRICA & PREPARAÇÃO DE DADOS (SEMPRE EXECUTA)
+    # 2. BUSCA HISTÓRICA & PREPARAÇÃO DE DADOS
     # -------------------------------------------------------------
     registrar_log("⏳ Buscando histórico (2020-2025)...", enviar_tg=False)
     historico_anos = {}
@@ -321,7 +344,6 @@ def job():
         log_txt += f"[{ano}: {val}] "
     registrar_log(log_txt, enviar_tg=False)
     
-    # Calcula dados complementares
     velocidade_texto = calcular_velocidade_rio(atual_t['nivel'], atual_t['data'])
     em_recessao = verificar_modo_vazante(atual_t['nivel'])
     risco = calcular_risco_por_rua(atual_t['nivel'])
@@ -329,11 +351,50 @@ def job():
     if em_recessao: registrar_log("MODO VAZANTE DETECTADO! 📉", enviar_tg=False)
 
     # -------------------------------------------------------------
-    # 2. ENVIA RELATÓRIO TELEGRAM (SEMPRE A CADA 15 MIN)
+    # 3. CÉREBRO IA (CALCULA PREVISÕES)
+    # -------------------------------------------------------------
+    # IA Curto Prazo (Timóteo)
+    try:
+        if d_timoteo and len(d_timoteo) >= 4:
+            prev_curta, vel_ia = cerebro_ia.prever_proxima_hora(d_timoteo[:6])
+            if prev_curta:
+                registrar_log(f"🧠 IA Curta (Inércia): Vai para {prev_curta:.0f}cm em 1h", enviar_tg=False)
+                nivel_futuro = prev_curta # Atualiza a variável segura
+                previsao_ia_texto = f"Prev. +1h: {prev_curta:.0f} cm"
+                msg_ia_longa += f"🔮 Previsão Imediata (+1h): *{prev_curta:.0f} cm* ({vel_ia})\n"
+    except Exception as e:
+        registrar_log(f"Erro IA Curta: {e}", enviar_tg=False)
+
+    # IA Médio Prazo (Nova Era)
+    try:
+        if d_nova_era and len(d_nova_era) >= 2:
+            prev_longa, explicacao = cerebro_ia.prever_com_nova_era(d_timoteo, d_nova_era)
+            
+            if prev_longa:
+                 diferenca = prev_longa - atual_t['nivel']
+                 if abs(diferenca) > 10:
+                     registrar_log(f"🔭 IA Longa (Nova Era): {explicacao} -> {prev_longa:.0f}cm", enviar_tg=False)
+                     msg_ia_longa += f"🌊 Onda de Cheia (Nova Era): Esperado *{prev_longa:.0f} cm* em ~5h\n"
+                 else:
+                     # ADICIONE ISTO AQUI PARA VER NO TERMINAL
+                     registrar_log(f"🔭 IA Longa: {explicacao} (Sem impacto grave)", enviar_tg=False)
+            else:
+                 # ADICIONE ISTO PARA VER SE FOI FILTRADO POR SER PEQUENO
+                 registrar_log(f"🔭 IA Longa: {explicacao}", enviar_tg=False)
+
+    except Exception as e:
+        registrar_log(f"Erro IA Longa: {e}", enviar_tg=False)
+
+    # -------------------------------------------------------------
+    # 4. ENVIA RELATÓRIO TELEGRAM (SEMPRE)
     # -------------------------------------------------------------
     try:
         msg_tg = f"🚨 *MONITORAMENTO DO RIO* (Ciclo 15min)\n"
         msg_tg += f"Nível Atual: *{atual_t['nivel']} cm*\n"
+        
+        if msg_ia_longa:
+            msg_tg += f"\n{msg_ia_longa}\n"
+            
         msg_tg += f"Tendência: {tendencia} {velocidade_texto}\n"
         msg_tg += f"Status: {motivo}\n"
         if em_recessao: msg_tg += "📉 *MODO VAZANTE ATIVO*\n"
@@ -360,7 +421,7 @@ def job():
         registrar_log(f"Erro ao enviar Telegram detalhado: {e}")
 
     # -------------------------------------------------------------
-    # 3. VERIFICA POSTAGEM INSTAGRAM/EMAIL (SEGUE REGRAS)
+    # 5. VERIFICA POSTAGEM INSTAGRAM/EMAIL
     # -------------------------------------------------------------
     if deve_postar and not MODO_TESTE:
         if "ROTINA" in motivo:
@@ -381,23 +442,34 @@ def job():
             
         dados_rio = {'nivel_cm': atual_t['nivel'], 'data_leitura': atual_t['data']}
     
+        # Prepara o texto curto para a Imagem
+        txt_previsao_imagem = None
+        if nivel_futuro: 
+            txt_previsao_imagem = f"Prev. +1h: {nivel_futuro:.0f} cm"
+
         # GERA IMAGENS
-        caminhos = gerar_todas_imagens(
-            dados_rio, 
-            risco, 
-            tendencia, 
-            historico_anos,
-            velocidade_texto,
-            em_recessao
-        )
-        
-        caminhos_abs = [str(Path(p).resolve()) for p in caminhos]
-        
+        try:
+            caminhos = gerar_todas_imagens(
+                dados_rio, 
+                risco, 
+                tendencia, 
+                historico_anos,
+                velocidade_texto,
+                em_recessao,
+                texto_previsao=txt_previsao_imagem,
+                dados_grafico=d_timoteo # <--- NOVA LINHA: Passa a lista bruta para o gráfico
+            )
+            caminhos_abs = [str(Path(p).resolve()) for p in caminhos]
+        except Exception as e:
+            registrar_log(f"Erro ao gerar imagens: {e}")
+            return
+
+        # ENVIA EMAIL (DENTRO DO IF)
         if "ROTINA" not in motivo:
             try: enviar_email_alerta(caminhos_abs, atual_t['nivel'], f"{tendencia} - {motivo}")
             except: pass
         
-        # INSTAGRAM
+        # ENVIA INSTAGRAM (DENTRO DO IF)
         try:
             enviar_carrossel_android(caminhos_abs, deve_limpar=precisa_limpar)
             ULTIMA_POSTAGEM = datetime.now()
