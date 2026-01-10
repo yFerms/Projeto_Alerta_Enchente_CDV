@@ -92,36 +92,46 @@ def gerar_capa_final(dados):
         # ELEMENTO 3: VELOCIDADE
         draw.text((centro_x, 640), f"({dados['velocidade']})", font=fonte_velocidade, fill=(255, 255, 255), anchor="mm")
 
-        # ELEMENTO 4: PREVISÃO (Descentralizado para direita)
+        # --- ELEMENTO 4: PREVISÃO (Cálculo Real) ---
+        # O monitor envia a velocidade como string "+2 cm/h", 
+        # garantimos que o texto da previsão use o valor calculado pelo monitor
         ajuste_direita = 40
         pos_x_final = centro_x + ajuste_direita
+        
+        # Se o monitor passar o valor da previsão pronto:
+        texto_previsao = f"Prev. +1h: {dados['previsao']} cm"
+        
+        # Previsão: Pegar exatamente o que o monitor enviou
         draw.text((pos_x_final, 760), f"Prev. +1h: {dados['previsao']} cm", font=fonte_previsao, fill=(0, 0, 0), anchor="mm")
-
-        # ELEMENTO 5: GRÁFICO
         print("Gerando gráfico...")
         grafico_img = gerar_grafico_transparente(dados['historico'])
         pos_x_grafico = int((imagem.width - grafico_img.width) / 2)
         pos_y_grafico = 940
         imagem.paste(grafico_img, (pos_x_grafico, pos_y_grafico), grafico_img)
 
-        # ELEMENTO 6: COMPARATIVO HISTÓRICO (Ajuste Independente)
-        print("Posicionando dados do comparativo...")
+       # --- ELEMENTO 6: COMPARATIVO HISTÓRICO ---
+        # Ajustando para usar os anos que o seu monitor_definitivo.py realmente busca
+        print("Posicionando dados do comparativo real...")
         pos_x_esquerda = 350
         pos_x_direita = 840
-        pos_y_linha_1 = 1530 # Altura de 2020 e 2022
-        pos_y_linha_2 = 1750 # Altura de 2021 e 2023
+        pos_y_linha_1 = 1530 
+        pos_y_linha_2 = 1750 
+        
         comp = dados['comparativo']
 
-        def formatar_comp(ano, valor):
+        # Função para evitar erro se o ano não existir no dicionário
+        def formatar_valor(ano):
+            valor = comp.get(ano, "---") # Mostra --- se não encontrar o dado
             return f"{ano}:\n{valor} cm"
 
+        # Organizando conforme os dados que você coleta (2020 e 2022)
         # Coluna Esquerda
-        draw.text((pos_x_esquerda, pos_y_linha_1), formatar_comp("2020", comp['2020']), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
-        draw.text((pos_x_esquerda, pos_y_linha_2), formatar_comp("2021", comp['2021']), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
+        draw.text((pos_x_esquerda, pos_y_linha_1), formatar_valor("2020"), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
+        draw.text((pos_x_esquerda, pos_y_linha_2), formatar_valor("2021"), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
 
         # Coluna Direita
-        draw.text((pos_x_direita, pos_y_linha_1), formatar_comp("2022", comp['2022']), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
-        draw.text((pos_x_direita, pos_y_linha_2), formatar_comp("2023", comp['2023']), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
+        draw.text((pos_x_direita, pos_y_linha_1), formatar_valor("2022"), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
+        draw.text((pos_x_direita, pos_y_linha_2), formatar_valor("2023"), font=fonte_previsao, fill=(255, 255, 255), anchor="mm", align="center")
 
         # ELEMENTO 7: RODAPÉ
         data_hora_atual = datetime.now().strftime("%d/%m/%Y às %H:%M")
@@ -139,34 +149,29 @@ def gerar_capa_final(dados):
         return
 
 if __name__ == "__main__":
-    print("Iniciando teste com DADOS REAIS...")
+    print("Iniciando teste com DADOS REAIS da ANA...")
     
-    try:
-        from vigia_ana import pegar_nivel_atual
-        nivel_atual = pegar_nivel_atual()
-    except ImportError:
-        print("Arquivo vigia_ana encontrado, mas a função tem outro nome ou não existe.")
-        nivel_atual = 460
-
-    dados_para_teste = {
-        "nivel": nivel_atual,
-        "status": "NORMAL" if nivel_atual < 450 else "ALERTA",
-        "velocidade": "-2 cm/h",
-        "previsao": nivel_atual - 2,
-        "historico": [
-            {'hora': '12h', 'nivel': 295},
-            {'hora': '13h', 'nivel': 292},
-            {'hora': '14h', 'nivel': 290},
-            {'hora': '15h', 'nivel': 288},
-            {'hora': '16h', 'nivel': 286},
-            {'hora': '17h', 'nivel': nivel_atual},
-        ],
-        "comparativo": {
-            "2020": 213,
-            "2021": 189,
-            "2022": 350,
-            "2023": 445
+    # IMPORTANTE: Usando a lógica do seu monitor_definitivo
+    from monitor_definitivo import buscar_dados_xml, ESTACAO_TIMOTEO
+    
+    leituras = buscar_dados_xml(ESTACAO_TIMOTEO)
+    
+    if leituras:
+        nivel_atual = leituras[0]['nivel']
+        # Simula o formato que o seu monitor_definitivo usa
+        dados_para_teste = {
+            "nivel": nivel_atual,
+            "status": "NORMAL" if nivel_atual < 450 else "ALERTA",
+            "velocidade": "+2 cm/h",
+            "previsao": nivel_atual + 2,
+            "historico": [
+                {'hora': l['data'].strftime('%Hh'), 'nivel': l['nivel']} 
+                for l in leituras[:6] # Pega as últimas 6
+            ],
+            "comparativo": {
+                "2020": 213, "2021": 189, "2022": 350, "2023": 445
+            }
         }
-    }
-
-    gerar_capa_final(dados_para_teste)
+        gerar_capa_final(dados_para_teste)
+    else:
+        print("Não foi possível conectar à ANA. Verifique a internet.")

@@ -65,6 +65,6 @@ def criar_grafico_linha(historico_recente):
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=True)
     buf.seek(0)
-    plt.close(fig)
+    plt.close('all')
     
     return Image.open(buf)

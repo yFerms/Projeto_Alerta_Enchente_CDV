@@ -326,6 +326,15 @@ def job():
 
     atual_t = d_timoteo[0]
     tendencia = analisar_tendencia(d_timoteo)
+
+    if atual_t:
+        # Tenta salvar no banco de dados, mas não para o robô se falhar
+        try:
+            salvar_leitura_no_banco(atual_t['data'], atual_t['nivel'])
+            print(f"✅ Leitura de {atual_t['nivel']}cm salva no banco local.")
+        except Exception as e:
+            # Se o banco travar, o robô apenas avisa no log e segue para as imagens
+            registrar_log(f"⚠️ Erro ao salvar no banco (o robô continuará): {e}")
     
     if MODO_TESTE or (ULTIMA_DATA_ANA != atual_t['data']):
         salvar_csv(atual_t['data'], atual_t['nivel'], tendencia, "Timoteo")
@@ -501,3 +510,49 @@ if __name__ == "__main__":
             time.sleep(15 * 60) 
     except KeyboardInterrupt:
         registrar_log("Encerrado.")
+
+        import sqlite3
+
+def salvar_leitura_no_banco(data_hora, nivel):
+    """Guarda a leitura atual no banco local para consultas futuras"""
+    try:
+        conn = sqlite3.connect("rio_doce.db")
+        cursor = conn.cursor()
+        # Converte a data para string para o SQLite
+        dt_str = data_hora.strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT OR IGNORE INTO historico (data_hora, nivel) VALUES (?, ?)", (dt_str, nivel))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao salvar no banco: {e}")
+
+def buscar_historico_local(dia, mes):
+    """Busca o nível médio do rio para o dia/mês em cada ano no banco SQLite"""
+    resultados = {}
+    try:
+        # Garante que o caminho para o banco está correto
+        caminho_banco = os.path.join(os.path.dirname(__file__), "rio_doce.db")
+        conn = sqlite3.connect(caminho_banco)
+        cursor = conn.cursor()
+        
+        # Query para pegar a média do nível naquele dia específico de cada ano
+        query = """
+            SELECT strftime('%Y', data_hora) as ano, AVG(nivel) 
+            FROM historico 
+            WHERE strftime('%d', data_hora) = ? 
+              AND strftime('%m', data_hora) = ?
+            GROUP BY ano
+            ORDER BY ano ASC
+        """
+        # Passa dia e mês com dois dígitos (ex: 01, 02...)
+        cursor.execute(query, (f"{dia:02d}", f"{mes:02d}"))
+        
+        for ano, nivel in cursor.fetchall():
+            # Retorna apenas os anos que temos dados (2019 a 2025)
+            resultados[int(ano)] = round(nivel, 0)
+            
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao consultar histórico local: {e}")
+        
+    return resultados
