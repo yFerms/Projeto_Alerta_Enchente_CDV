@@ -12,6 +12,7 @@ import cerebro_ia
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import monitor_clima
+import sqlite3
 
 # --- MÓDULOS LOCAIS ---
 from gerar_imagem import gerar_todas_imagens
@@ -45,6 +46,27 @@ ESTACAO_NOVA_ERA = "56661000"
 
 ULTIMA_DATA_ANA = None
 ULTIMA_POSTAGEM = None
+
+
+# Função para garantir o caminho correto do banco
+def conectar_banco():
+    diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+    caminho_db = os.path.join(diretorio_atual, "rio_doce.db")
+    return sqlite3.connect(caminho_db)
+
+def salvar_leitura_no_banco(data_hora, nivel):
+    """Guarda a leitura atual no banco local para consultas futuras"""
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        # Converte a data para string no formato do SQLite
+        dt_str = data_hora.strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT OR IGNORE INTO historico (data_hora, nivel) VALUES (?, ?)", (dt_str, nivel))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # Relança o erro para o try-except do loop capturar
+        raise e
 
 # ==============================================================================
 # FUNÇÕES AUXILIARES

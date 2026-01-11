@@ -25,6 +25,8 @@ def gerar_grafico_transparente(dados_historicos):
 
     # PLOTAGEM (Linha branca com bolinhas)
     ax.plot(horas, niveis, color='white', linewidth=3, marker='o', markersize=8)
+    # Adiciona 20% de margem no eixo Y (em cima e embaixo)
+    ax.margins(y=0.2)
     
     # Preenchimento degradê
     ax.fill_between(horas, niveis, color='white', alpha=0.1)
@@ -95,9 +97,8 @@ def gerar_capa_final(dados):
         # --- ELEMENTO 4: PREVISÃO (Cálculo Real) ---
         # O monitor envia a velocidade como string "+2 cm/h", 
         # garantimos que o texto da previsão use o valor calculado pelo monitor
-        ajuste_direita = 40
-        pos_x_final = centro_x + ajuste_direita
-        
+        ajuste_direita = 30
+        pos_x_final = centro_x
         # Se o monitor passar o valor da previsão pronto:
         texto_previsao = f"Prev. +1h: {dados['previsao']} cm"
         
