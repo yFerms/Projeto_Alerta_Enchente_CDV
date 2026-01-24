@@ -1,0 +1,77 @@
+﻿Monitor de Alerta de Enchente - Cachoeira do Vale
+
+1. Visão Geral do Projeto
+
+Este sistema foi desenvolvido para monitorizar em tempo real o nível do Rio Doce (Estação Timóteo), fornecendo alertas visuais inteligentes e preditivos para a comunidade de Cachoeira do Vale. O diferencial do projeto é a sua Memória Histórica, que permite comparar a situação atual com grandes cheias passadas (2019-2025).
+
+2. Arquitetura do Sistema
+
+Entrada de Dados (Ingestion)
+
+- Fonte Principal: API de Telemetria da ANA (Agência Nacional de Águas).
+- Frequência: Verificação a cada 15 minutos.
+- Persistência: Todos os dados lidos são automaticamente gravados no banco de dados local rio_doce.db.
+
+Processamento e IA
+
+- Tendência: Cálculo de velocidade de subida/descida (cm/h).
+- Previsão: Algoritmo de inércia (Regressão Linear) para estimativa do nível em +1 hora.
+- Histórico: Consulta SQL instantânea no SQLite para buscar níveis médios na mesma data em anos anteriores.
+- Correlação: Análise de atraso (lag) com a estação de montante (Nova Era) para prever ondas de cheia.
+
+Saída Visual (Output)
+
+- Capas Dinâmicas: Seleção automática de templates (Verde, Amarela ou Vermelha) baseada no nível de risco.
+- Gráficos: Renderização de transparência com Matplotlib (últimas 6 horas / 25 pontos).
+- Placares: Mapeamento de ruas atingidas com barras de progresso e paginação automática.
+
+3. Guia de Operação
+
+Operação em Tempo Real (Produção)
+
+Para manter o monitor ativo 24/7, execute:
+python monitor_definitivo.py
+
+O que ele faz: Inicia o ciclo automático. Verifica a ANA a cada 15 min, salva no banco, calcula riscos e posta no Instagram/Telegram se houver mudanças significativas ou nos horários de rotina (07:00 e 19:00).
+
+Postagem Manual (Emergência)
+
+Caso precise forçar uma postagem fora do horário programado ou testar a conexão imediatamente:
+python postar_agora.py
+
+O que ele faz: Executa um ciclo único instantâneo, gera as imagens e envia para todos os canais, ignorando temporizadores.
+
+Ambiente de Laboratório (Debug Visual)
+
+Para testar o design das imagens e as cores das capas sem postar nada na internet:
+python debug_capas_completo.py
+
+O que ele faz: Gera simulações de níveis Verde, Amarelo e Vermelho na pasta /output para validação visual.
+
+4. Níveis Críticos de Operação
+
+O sistema altera automaticamente a identidade visual e a frequência de alertas conforme a gravidade:
+
+Nível (cm) | Situação | Cor da Capa | Ação do Sistema
+0 - 399 | Normal | Verde | Monitoramento silencioso. Postagem 12h/12h.
+400 - 599 | Atenção | Amarela | Monitoramento alerta. Cálculo de velocidade ativo.
+600+ | Alerta Crítico | Vermelha | Postagem frequente. Placar de ruas em destaque.
+
+5. Estrutura de Arquivos e Pastas
+
+- /assets: Contém os recursos estáticos (imagens de fundo e fontes).
+- /output: Armazena as imagens geradas antes do envio.
+- rio_doce.db: O banco de dados SQLite contendo todo o histórico. Faça backup deste arquivo regularmente.
+- .env: Arquivo de configuração com tokens do Telegram e credenciais.
+
+6. Manutenção de Dados
+
+Importação de Novos Dados
+
+Se precisar inserir dados históricos manualmente (ex: planilhas antigas da Defesa Civil):
+1. Formate a planilha com as colunas Data_Hora e Nivel_Adotado.
+2. Utilize o script importar_planilha.py.
+
+Backup
+
+Copie o arquivo rio_doce.db para um local seguro (nuvem ou HD externo) semanalmente durante o período chuvoso.
